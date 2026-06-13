@@ -27,6 +27,7 @@
 #   INSTALL_DIR           安装目录（默认 /opt/daily_stock_analysis）
 #   DOCKER_MIRROR         Docker 镜像加速地址（默认空，跳过）
 #   APT_MIRROR            Debian APT 源镜像（默认 mirrors.aliyun.com，适合国内云服务器）
+#   PIP_MIRROR            PyPI 镜像（默认 mirrors.aliyun.com，适合国内云服务器）
 #   SKIP_DOCKER_INSTALL   设为 1 跳过 Docker 安装
 #   SKIP_BUILD            设为 1 跳过镜像构建（用已有镜像）
 #   SKIP_GIT              设为 1 跳过 git 操作（手动 COPY 代码时用）
@@ -40,6 +41,7 @@ REPO_BRANCH="${REPO_BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/daily_stock_analysis}"
 DOCKER_MIRROR="${DOCKER_MIRROR:-}"
 APT_MIRROR="${APT_MIRROR:-mirrors.aliyun.com}"
+PIP_MIRROR="${PIP_MIRROR:-mirrors.aliyun.com}"
 SKIP_DOCKER_INSTALL="${SKIP_DOCKER_INSTALL:-0}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 SKIP_GIT="${SKIP_GIT:-0}"
@@ -202,8 +204,10 @@ build_images() {
     fi
     cd "${INSTALL_DIR}"
     log "构建 Docker 镜像（首次 5-10 分钟）..."
-    export APT_MIRROR
-    docker compose -f docker/docker-compose.yml build --build-arg "APT_MIRROR=${APT_MIRROR}"
+    export APT_MIRROR PIP_MIRROR
+    docker compose -f docker/docker-compose.yml build \
+        --build-arg "APT_MIRROR=${APT_MIRROR}" \
+        --build-arg "PIP_MIRROR=${PIP_MIRROR}"
     ok "镜像构建完成"
 }
 

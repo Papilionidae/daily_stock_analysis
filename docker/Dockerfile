@@ -49,6 +49,12 @@ RUN groupadd -g 1000 dsa && \
 # 复制依赖文件
 COPY requirements.txt .
 
+# PyPI 镜像（解决 GFW 访问 files.pythonhosted.org 超时的问题）
+ARG PIP_MIRROR="mirrors.aliyun.com"
+RUN if [ -n "${PIP_MIRROR}" ]; then \
+        pip config set global.index-url "https://${PIP_MIRROR}/pypi/simple/"; \
+    fi
+
 # 安装 Python 依赖
 RUN pip install --no-cache-dir -r requirements.txt
 
