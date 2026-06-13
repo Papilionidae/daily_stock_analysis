@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, timedelta, date
 from typing import Dict, List, Optional
 
 from src.services.auto_recommend.models import (
@@ -37,13 +37,32 @@ class TPlus1Validator:
         """Persist a recommendation record for later T+1 verification."""
         self._records.append(record)
 
+    def _get_today_shanghai(self) -> date:
+        try:
+            from zoneinfo import ZoneInfo
+            return datetime.now(ZoneInfo("Asia/Shanghai")).date()
+        except ImportError:
+            return datetime.now(timezone.utc).astimezone(
+                timezone(timedelta(hours=8))
+            ).date()
+
+    @staticmethod
+    def _to_shanghai_date(dt: datetime) -> date:
+        try:
+            from zoneinfo import ZoneInfo
+            return dt.astimezone(ZoneInfo("Asia/Shanghai")).date()
+        except ImportError:
+            return dt.astimezone(
+                timezone(timedelta(hours=8))
+            ).date()
+
     def get_pending(self) -> List[RecommendationRecord]:
         """Return records from a previous calendar day (ready for T+1)."""
-        today = date.today()
+        today = self._get_today_shanghai()
         return [
             r for r in self._records
             if not r.verified
-            and r.recommended_at.date() < today
+            and self._to_shanghai_date(r.recommended_at) < today
         ]
 
     def get_all(self) -> List[RecommendationRecord]:

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Set
 
 from src.services.auto_recommend.models import (
@@ -58,7 +58,7 @@ class AutoRecommendEngine:
         self.top_n = top_n
         self.deep_analyze_top_n = deep_analyze_top_n
         self.enabled_channels: Set[ChannelType] = set(
-            enabled_channels or list(ChannelType)
+            enabled_channels or [ChannelType.SECTOR, ChannelType.THEME, ChannelType.FACTOR, ChannelType.TECHNICAL]
         )
         self._scorer = scorer or Scorer()
         self._sources = sources or self._default_sources()
@@ -227,7 +227,9 @@ class AutoRecommendEngine:
                 confidence=round(confidence, 4),
                 recommended_price=price,
                 recommended_at=now,
+                stock_name=c.stock_name,
                 strategy_tags=[f"auto:{mode.value}"],
+                sector=c.sector,
                 summary=f"From {c.channel.value} score={composite:.1f}",
             )
             records.append(record)

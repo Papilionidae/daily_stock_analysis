@@ -5,8 +5,9 @@ AI 自动荐股接口
 ===================================
 """
 
+import asyncio
 import logging
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -17,6 +18,10 @@ from api.v1.errors import api_error
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_last_result: Optional["AutoRecommendResponse"] = None
+
+ENGINE_TIMEOUT = 300  # seconds
 
 
 class AutoRecommendRequest(BaseModel):
@@ -44,59 +49,48 @@ class AutoRecommendResponse(BaseModel):
     report_markdown: str
 
 
-@router.post(
-    "/run",
-    response_model=AutoRecommendResponse,
-    summary="触发 AI 自动荐股",
-    description="扫描全市场，通过多通道发现候选股并生成推荐报告。",
-)
-def run_auto_recommend(
-    request: AutoRecommendRequest,
-    config=Depends(get_config_dep),
-) -> AutoRecommendResponse:
+def _build_engine(mode: str, top_n: int, deep_analyze: int):
     from src.services.auto_recommend.engine import AutoRecommendEngine
-    from src.services.auto_recommend.report import generate_recommend_report
     from src.services.auto_recommend.models import ChannelType
 
-    if request.mode == "quick":
-        engine = AutoRecommendEngine(
+    if mode == "quick":
+        return AutoRecommendEngine(
             top_n=5,
             deep_analyze_top_n=1,
             enabled_channels=[ChannelType.SECTOR, ChannelType.FACTOR],
         )
-    else:
-        engine = AutoRecommendEngine(
-            top_n=request.top_n,
-            deep_analyze_top_n=request.deep_analyze,
-        )
+    return AutoRecommendEngine(top_n=top_n, deep_analyze_top_n=deep_analyze)
+
+
+def _run_engine(engine) -> tuple:
+    from src.services.auto_recommend.report import generate_recommend_report
 
     result = engine.run()
     report_md = generate_recommend_report(result)
+    return result, report_md
 
-    if request.notify and result.success:
-        try:
-            from src.notification import get_notification_service
-            svc = get_notification_service()
-            svc.send(report_md)
-        except Exception as exc:
-            logger.warning("auto-recommend notification failed: %s", exc)
 
+def _build_response(result, report_md: str) -> "AutoRecommendResponse":
     if not result.success:
-        raise api_error(500, "recommend_failed", result.error or "推荐失败")
-
+        return AutoRecommendResponse(
+            success=False,
+            candidates=[],
+            recommendations=[],
+            total_scanned=result.total_scanned,
+            report_markdown=report_md,
+        )
     recs = [
         AutoRecommendStock(
             stock_code=r.stock_code,
-            stock_name=r.stock_code,
+            stock_name=r.stock_name or r.stock_code,
             channel=r.channel.value,
             signal=r.signal.value,
             confidence=r.confidence,
-            sector=None,
+            sector=r.sector,
             summary=r.summary,
         )
         for r in result.recommendations
     ]
-
     return AutoRecommendResponse(
         success=True,
         candidates=result.candidates or [],
@@ -106,29 +100,68 @@ def run_auto_recommend(
     )
 
 
+@router.post(
+    "/run",
+    response_model=AutoRecommendResponse,
+    summary="触发 AI 自动荐股",
+    description="扫描全市场，通过多通道发现候选股并生成推荐报告。",
+)
+async def run_auto_recommend(
+    request: AutoRecommendRequest,
+    config=Depends(get_config_dep),
+) -> "AutoRecommendResponse":
+    engine = _build_engine(request.mode, request.top_n, request.deep_analyze)
+
+    try:
+        result, report_md = await asyncio.wait_for(
+            asyncio.to_thread(_run_engine, engine),
+            timeout=ENGINE_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.error("auto-recommend engine timed out after %ds", ENGINE_TIMEOUT)
+        raise api_error(503, "engine_timeout", f"荐股引擎执行超时（{ENGINE_TIMEOUT}s）")
+
+    resp = _build_response(result, report_md)
+
+    global _last_result
+    _last_result = resp
+
+    if request.notify and result.success:
+        try:
+            from src.notification import get_notification_service
+
+            svc = get_notification_service()
+            await asyncio.to_thread(svc.send, report_md)
+        except Exception as exc:
+            logger.warning("auto-recommend notification failed: %s", exc)
+
+    return resp
+
+
 @router.get(
     "/last",
+    response_model=AutoRecommendResponse,
     summary="获取最近一次推荐结果",
-    description="返回最近一次自动荐股的报告 Markdown。",
+    description="返回最近一次自动荐股的结果（缓存优先，无缓存时执行一次默认扫描）。",
 )
-def get_last_recommend() -> Dict[str, Any]:
+async def get_last_recommend() -> "AutoRecommendResponse":
+    global _last_result
+    if _last_result is not None:
+        return _last_result
+
     try:
-        from src.services.auto_recommend.engine import AutoRecommendEngine
-        from src.services.auto_recommend.report import generate_recommend_report
+        engine = _build_engine("full", 10, 3)
+        result, report_md = await asyncio.wait_for(
+            asyncio.to_thread(_run_engine, engine),
+            timeout=ENGINE_TIMEOUT,
+        )
 
-        engine = AutoRecommendEngine()
-        result = engine.run()
-
-        if not result.success:
-            return {"success": False, "report_markdown": "", "error": result.error}
-
-        report_md = generate_recommend_report(result)
-        return {
-            "success": True,
-            "total_scanned": result.total_scanned,
-            "pick_count": len(result.recommendations),
-            "report_markdown": report_md,
-        }
+        resp = _build_response(result, report_md)
+        _last_result = resp
+        return resp
+    except asyncio.TimeoutError:
+        logger.error("auto-recommend engine timed out after %ds", ENGINE_TIMEOUT)
+        raise api_error(503, "engine_timeout", f"荐股引擎执行超时（{ENGINE_TIMEOUT}s）")
     except Exception as exc:
         logger.error("get_last_recommend failed: %s", exc)
         raise api_error(500, "internal_error", f"获取推荐结果失败: {str(exc)[:100]}")

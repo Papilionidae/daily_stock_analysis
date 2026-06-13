@@ -18,6 +18,7 @@ Tools:
 8. 暴露 min_industry_size / log_transform 等参数
 """
 
+import bisect
 import logging
 import math
 import time
@@ -236,7 +237,7 @@ def _industry_quantile(
     target = values[index]
     if target is None:
         return 0.5
-    rank = sum(1 for v in sorted_vals if v <= target)
+    rank = bisect.bisect_right(sorted_vals, target)
     return rank / len(sorted_vals)
 
 
@@ -274,7 +275,7 @@ def _industry_quantile_batch(
         if not sorted_vals:
             quantiles.append(0.5)
             continue
-        rank = sum(1 for v in sorted_vals if v <= values[i])
+        rank = bisect.bisect_right(sorted_vals, values[i])
         quantiles.append(rank / len(sorted_vals))
     return quantiles
 
@@ -418,15 +419,18 @@ def _handle_get_factor_universe(
 
     filtered = []
     excluded_by_market = 0
+    has_mcap = any("total_mv" in item for item in raw)
     for item in raw:
         name = item.get("name", "") or ""
         if exclude_st and ("ST" in name or "退" in name):
             continue
-        mcap = item.get("total_mv", 0)
-        if mcap is None or mcap <= 0:
-            mcap = item.get("circ_mv", 0) or 0
-        if mcap < min_market_cap:
-            continue
+        mcap = 0.0
+        if has_mcap:
+            mcap = item.get("total_mv", 0) or 0
+            if mcap <= 0:
+                mcap = item.get("circ_mv", 0) or 0
+            if mcap < min_market_cap:
+                continue
         industry = item.get("industry") or "未知"
         ts_code = item.get("ts_code") or item.get("code", "")
         code = ts_code.split(".")[0] if "." in ts_code else str(ts_code)

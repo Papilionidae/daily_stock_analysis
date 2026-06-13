@@ -20,7 +20,8 @@ export const autoRecommendApi = {
 
     const response = await apiClient.post<Record<string, unknown>>(
       '/api/v1/auto-recommend/run',
-      requestData
+      requestData,
+      { timeout: 300000 },
     );
 
     return toCamelCase<AutoRecommendResponse>(response.data);
@@ -31,7 +32,8 @@ export const autoRecommendApi = {
    */
   getLast: async (): Promise<AutoRecommendLastResponse> => {
     const response = await apiClient.get<Record<string, unknown>>(
-      '/api/v1/auto-recommend/last'
+      '/api/v1/auto-recommend/last',
+      { timeout: 300000 },
     );
 
     return toCamelCase<AutoRecommendLastResponse>(response.data);

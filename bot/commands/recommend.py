@@ -80,14 +80,6 @@ class RecommendCommand(BotCommand):
 
             report = generate_recommend_report(result)
 
-            # Push notification
-            try:
-                from src.notification import get_notification_service
-                svc = get_notification_service()
-                svc.send(report)
-            except Exception as exc:
-                logger.warning("recommend notification failed: %s", exc)
-
             return BotResponse.markdown_response(report)
 
         except Exception as e:

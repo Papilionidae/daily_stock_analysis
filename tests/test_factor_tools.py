@@ -208,8 +208,11 @@ class _MockManager:
         return self._fetchers
 
     def get_daily_data(self, stock_code: str, days: int = 250, **kwargs):
+        import pandas as pd
         bars = self._daily.get(stock_code, [])
-        return bars, "mock"
+        if bars:
+            return pd.DataFrame(bars), "mock"
+        return pd.DataFrame(), "mock"
 
     def get_realtime_quote(self, stock_code: str):
         return self._realtime.get(stock_code)

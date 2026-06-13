@@ -110,7 +110,9 @@ class RecommendationRecord:
     confidence: float
     recommended_price: float
     recommended_at: datetime
+    stock_name: str = ""
     strategy_tags: List[str] = field(default_factory=list)
+    sector: Optional[str] = None
     summary: str = ""
     verified: bool = False
     t1_price: Optional[float] = None

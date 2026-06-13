@@ -229,9 +229,10 @@ class FactorSource(DiscoveryChannel):
         for s in result.get("selected_stocks", []):
             score = s.get("composite_score", 0.5) * 100.0
             code = s.get("code", "")
+            name = s.get("name") or self._resolve_name(code)
             c = Candidate(
                 stock_code=code,
-                stock_name=code,  # factor result does not contain name
+                stock_name=name,
                 channel=ChannelType.FACTOR,
                 channel_score=round(score, 2),
                 sector=s.get("industry"),
@@ -242,6 +243,12 @@ class FactorSource(DiscoveryChannel):
                 candidates.append(c)
 
         return candidates
+
+    def _resolve_name(self, code: str) -> str:
+        try:
+            return self._data_manager.get_stock_name(code) or code
+        except Exception:
+            return code
 
 
 class TechnicalSource(DiscoveryChannel):
@@ -296,7 +303,7 @@ class TechnicalSource(DiscoveryChannel):
         """Get A-share stock codes from internal fetchers."""
         codes: List[str] = []
         try:
-            for fetcher in self._data_manager._fetchers:
+            for fetcher in self._data_manager._get_fetchers_snapshot():
                 if hasattr(fetcher, "get_stock_list"):
                     df = fetcher.get_stock_list()
                     if df is not None:

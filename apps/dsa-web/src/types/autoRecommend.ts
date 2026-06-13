@@ -23,10 +23,4 @@ export interface AutoRecommendResponse {
   reportMarkdown: string;
 }
 
-export interface AutoRecommendLastResponse {
-  success: boolean;
-  totalScanned?: number;
-  pickCount?: number;
-  reportMarkdown: string;
-  error?: string;
-}
+export type AutoRecommendLastResponse = AutoRecommendResponse;

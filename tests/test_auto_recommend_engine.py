@@ -26,8 +26,15 @@ class TestEngineInit(unittest.TestCase):
 
     def test_enabled_channels_default(self):
         engine = AutoRecommendEngine()
-        for ch in ChannelType:
+        expected_channels = [
+            ChannelType.SECTOR,
+            ChannelType.THEME,
+            ChannelType.FACTOR,
+            ChannelType.TECHNICAL,
+        ]
+        for ch in expected_channels:
             self.assertIn(ch, engine.enabled_channels)
+        self.assertNotIn(ChannelType.ALPHASIFT, engine.enabled_channels)
 
 
 class TestEnginePhaseDetection(unittest.TestCase):
