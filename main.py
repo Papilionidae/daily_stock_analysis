@@ -389,6 +389,23 @@ def parse_arguments() -> argparse.Namespace:
         help='不保存分析上下文快照'
     )
 
+    # === AI 自动荐股 ===
+    parser.add_argument(
+        '--recommend',
+        action='store_true',
+        help='运行 AI 自动荐股（扫描全市场发现候选股）'
+    )
+    parser.add_argument(
+        '--recommend-quick',
+        action='store_true',
+        help='运行快速 AI 荐股（仅 quick 模式，适用于盘前/pre-market）'
+    )
+    parser.add_argument(
+        '--recommend-serve',
+        action='store_true',
+        help='运行 AI 荐股并启动 Web 服务'
+    )
+
     # === Backtest ===
     parser.add_argument(
         '--backtest',
@@ -940,7 +957,34 @@ def main() -> int:
             )
             return 0
 
-        # 模式1: 仅大盘复盘
+        # 模式1: AI 自动荐股
+        if args.recommend or args.recommend_quick or args.recommend_serve:
+            from src.services.auto_recommend.engine import AutoRecommendEngine
+            from src.services.auto_recommend.report import generate_recommend_report
+            from src.services.auto_recommend.models import ChannelType
+            if getattr(args, 'recommend_quick', False):
+                top_n = 5
+                deep_analyze = 1
+                channels = [ChannelType.SECTOR, ChannelType.FACTOR]
+            else:
+                top_n = config.auto_recommend_top_n
+                deep_analyze = config.auto_recommend_deep_analyze
+                channels = None
+            engine = AutoRecommendEngine(
+                top_n=top_n,
+                deep_analyze_top_n=deep_analyze,
+                enabled_channels=channels,
+            )
+            result = engine.run()
+            report = generate_recommend_report(result)
+            print(report)
+            if args.recommend_serve:
+                logger.info("AI 荐股完成，启动 Web 服务...")
+                import uvicorn
+                uvicorn.run("server:app", host=args.host, port=args.port, reload=False)
+            return 0
+
+        # 模式2: 仅大盘复盘
         if args.market_review:
             from src.core.market_review import run_market_review
             from src.core.market_review_runtime import build_market_review_runtime
@@ -975,7 +1019,7 @@ def main() -> int:
             )
             return 0
 
-        # 模式2: 定时任务模式
+        # 模式3: 定时任务模式
         if args.schedule or config.schedule_enabled:
             logger.info("模式: 定时任务")
             logger.info(f"每日执行时间: {config.schedule_time}")
@@ -990,6 +1034,7 @@ def main() -> int:
             logger.info(f"启动时立即执行: {should_run_immediately}")
 
             from src.scheduler import run_with_schedule
+            from src.services.auto_recommend.scheduler_integration import build_auto_recommend_task
             scheduled_stock_codes = _resolve_scheduled_stock_codes(stock_codes)
             schedule_time_provider = _build_schedule_time_provider(config.schedule_time)
 
@@ -998,6 +1043,15 @@ def main() -> int:
                 run_full_analysis(runtime_config, args, scheduled_stock_codes)
 
             background_tasks = []
+            # Register auto-recommend as background task if enabled
+            if getattr(config, 'auto_recommend_enabled', False):
+                recommend_task = build_auto_recommend_task()
+                background_tasks.append({
+                    "task": recommend_task,
+                    "interval_seconds": 86400,  # daily
+                    "run_immediately": True,
+                    "name": "auto_recommend",
+                })
             if getattr(config, 'agent_event_monitor_enabled', False):
                 from src.services.alert_worker import AlertWorker
 
@@ -1026,7 +1080,7 @@ def main() -> int:
             )
             return 0
 
-        # 模式3: 正常单次运行
+        # 模式4: 正常单次运行
         if config.run_immediately:
             run_full_analysis(config, args, stock_codes)
         else:

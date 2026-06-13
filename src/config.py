@@ -903,6 +903,11 @@ class Config:
     # 交易日检查：默认启用，非交易日跳过执行；设为 false 或 --force-run 可强制执行（Issue #373）
     trading_day_check_enabled: bool = True
 
+    # === AI 自动荐股配置 ===
+    auto_recommend_enabled: bool = False        # 是否启用 AI 自动荐股
+    auto_recommend_top_n: int = 10              # 候选股 top N 数量
+    auto_recommend_deep_analyze: int = 3        # 深度分析 top N 数量
+
     # === 实时行情增强数据配置 ===
     # 实时行情开关（关闭后使用历史收盘价进行分析）
     enable_realtime_quote: bool = True
@@ -1700,6 +1705,15 @@ class Config:
             schedule_time=(schedule_time_value or '18:00').strip() or '18:00',
             schedule_run_immediately=schedule_run_immediately,
             run_immediately=legacy_run_immediately,
+            auto_recommend_enabled=os.getenv('AUTO_RECOMMEND_ENABLED', 'false').lower() == 'true',
+            auto_recommend_top_n=parse_env_int(
+                os.getenv('AUTO_RECOMMEND_TOP_N'), 10,
+                field_name='AUTO_RECOMMEND_TOP_N', minimum=1,
+            ),
+            auto_recommend_deep_analyze=parse_env_int(
+                os.getenv('AUTO_RECOMMEND_DEEP_ANALYZE'), 3,
+                field_name='AUTO_RECOMMEND_DEEP_ANALYZE', minimum=1,
+            ),
             market_review_enabled=os.getenv('MARKET_REVIEW_ENABLED', 'true').lower() == 'true',
             market_review_region=cls._parse_market_review_region(
                 os.getenv('MARKET_REVIEW_REGION', 'cn')

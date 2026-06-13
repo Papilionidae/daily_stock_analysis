@@ -34,6 +34,9 @@ TOOL_DISPLAY_NAMES: Dict[str, str] = {
     "get_skill_backtest_summary": "获取技能回测概览",
     "get_strategy_backtest_summary": "获取策略回测概览",
     "get_stock_backtest_summary": "获取个股回测数据",
+    "get_factor_universe": "获取因子股票池",
+    "get_factor_scores": "多因子评分",
+    "get_universe_screen": "横截面选股",
 }
 
 logger = logging.getLogger(__name__)

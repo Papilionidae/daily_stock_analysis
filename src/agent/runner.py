@@ -49,6 +49,9 @@ _THINKING_TOOL_LABELS: Dict[str, str] = {
     "get_skill_backtest_summary": "技能回测概览",
     "get_strategy_backtest_summary": "策略回测概览",
     "get_stock_backtest_summary": "个股回测数据",
+    "get_factor_universe": "因子股票池获取",
+    "get_factor_scores": "多因子评分",
+    "get_universe_screen": "横截面选股",
 }
 
 

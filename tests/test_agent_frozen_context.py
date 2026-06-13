@@ -119,11 +119,17 @@ class DesktopBackendPackagingAssetsTestCase(unittest.TestCase):
         strategies_dir = self.repo_root / "strategies"
         strategy_names = sorted(path.stem for path in strategies_dir.glob("*.yaml"))
 
-        self.assertEqual(len(strategy_names), 15)
+        self.assertEqual(len(strategy_names), 20)
         self.assertIn("bottom_volume", strategy_names)
         self.assertIn("chan_theory", strategy_names)
         self.assertIn("ma_golden_cross", strategy_names)
         self.assertIn("wave_theory", strategy_names)
+        # v0.1 added (multi-factor / sector rotation / short-term reversal / 12-1 momentum / PEAD)
+        self.assertIn("multi_factor", strategy_names)
+        self.assertIn("sector_rotation", strategy_names)
+        self.assertIn("short_term_reversal", strategy_names)
+        self.assertIn("momentum_12_1", strategy_names)
+        self.assertIn("pead_drift", strategy_names)
 
     def test_backend_pyinstaller_scripts_include_strategies_data_directory(self):
         macos_script = (self.repo_root / "scripts" / "build-backend-macos.sh").read_text(

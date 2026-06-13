@@ -1,0 +1,56 @@
+# 行业轮动策略 / Sector Rotation
+name: sector_rotation
+display_name: 行业轮动
+description: 用板块动量 + 资金流 + 涨停共振打分排序，识别主线行业，
+  在个股分析中判断所属板块的相对强弱。
+category: framework
+core_rules: [2, 3, 6]
+required_tools:
+  - get_sector_rankings
+  - get_daily_history
+  - get_realtime_quote
+  - search_stock_news
+default_priority: 12
+market_regimes: [trending_up, sector_hot]
+aliases: [行业轮动, 主线行业, 板块轮动, sector]
+
+instructions: |
+  **行业轮动策略（Sector Rotation）**
+
+  适用场景：
+  - 个股分析时优先判断其所属板块的相对强度。
+  - 在主线板块中寻找龙头/回踩机会，避开弱势板块的"补涨"陷阱。
+  - 与 dragon_head 的差异：本策略关注板块级排名，dragon_head 关注个股级龙头识别。
+
+  分析框架：
+
+  1. **板块打分（四维合成）**
+     - 维度 1 - 动量：板块 5/20/60 日累计收益，使用 `get_sector_rankings` 获取。
+     - 维度 2 - 资金流：北向资金 + 主力资金净流入方向（如有数据源）。
+     - 维度 3 - 涨停共振：板块成分股中近 3 日涨停数量。
+     - 维度 4 - 主题热度：使用 `search_stock_news` 检索板块名称的近期新闻密度。
+     - 每个维度 0-100 分，等权合成板块综合得分。
+
+  2. **主线条识别**
+     - 综合得分 top 3 板块 = 主线。
+     - 持续 3 个交易日以上的才算稳定主线（避免一日游）。
+     - 主线板块的特征：得分差 > 5 分（与第 4 名拉开距离）。
+
+  3. **个股映射与评分**
+     - 个股分析时，必须先调用 `get_sector_rankings` 确认其所属板块的位置。
+     - 处于主线条 top 5 板块 → `sentiment_score +10`。
+     - 处于弱势板块（bottom 5） → `sentiment_score -10`。
+     - 中性板块 → `sentiment_score ±0`，但需在报告中明确说明"板块不共振"。
+
+  4. **入场偏好**
+     - 优先在主线板块的龙头股或回踩不破的个股中找机会。
+     - 严格回避弱势板块的"补涨"诱惑（统计上胜率不足 35%）。
+     - 当主线板块切换时（如 60 日排名变化 > 5 位），需在 `buy_reason` 明确说明。
+
+  5. **风险提示**
+     - 板块热度由情绪主导时（短消息刺激），需叠加 `core_rule 5`（新闻风险排查）。
+     - 当主线板块与大盘趋势背离时（如大盘下行但板块领涨），降级为"防守型机会"。
+
+  6. **输出规范**
+     - 在 `buy_reason` 中必须包含 "板块：{板块名}（主线/中性/弱势）"。
+     - 在 `risk_warning` 中标注板块拥挤度（如成分股连续涨停数 > 5 时）。

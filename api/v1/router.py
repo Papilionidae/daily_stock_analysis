@@ -17,6 +17,7 @@ from api.v1.endpoints import (
     alphasift,
     analysis,
     auth,
+    auto_recommend,
     backtest,
     decision_signals,
     health,
@@ -100,6 +101,12 @@ router.include_router(
     alphasift.router,
     prefix="/alphasift",
     tags=["AlphaSift"]
+)
+
+router.include_router(
+    auto_recommend.router,
+    prefix="/auto-recommend",
+    tags=["AutoRecommend"]
 )
 
 router.include_router(
