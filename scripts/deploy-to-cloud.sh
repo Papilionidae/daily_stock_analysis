@@ -26,6 +26,7 @@
 #   REPO_BRANCH           分支（默认 main）
 #   INSTALL_DIR           安装目录（默认 /opt/daily_stock_analysis）
 #   DOCKER_MIRROR         Docker 镜像加速地址（默认空，跳过）
+#   APT_MIRROR            Debian APT 源镜像（默认 mirrors.aliyun.com，适合国内云服务器）
 #   SKIP_DOCKER_INSTALL   设为 1 跳过 Docker 安装
 #   SKIP_BUILD            设为 1 跳过镜像构建（用已有镜像）
 #   SKIP_GIT              设为 1 跳过 git 操作（手动 COPY 代码时用）
@@ -38,10 +39,12 @@ REPO_URL="${REPO_URL:-https://github.com/ZhuLinsen/daily_stock_analysis.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/daily_stock_analysis}"
 DOCKER_MIRROR="${DOCKER_MIRROR:-}"
+APT_MIRROR="${APT_MIRROR:-mirrors.aliyun.com}"
 SKIP_DOCKER_INSTALL="${SKIP_DOCKER_INSTALL:-0}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 SKIP_GIT="${SKIP_GIT:-0}"
 ENV_SOURCE="${ENV_SOURCE:-}"
+GIT_CLEAN_CONFIRM="${GIT_CLEAN_CONFIRM:-}"
 
 log()  { printf '\033[1;34m[INFO]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[WARN]\033[0m %s\n' "$*" >&2; }
@@ -199,7 +202,8 @@ build_images() {
     fi
     cd "${INSTALL_DIR}"
     log "构建 Docker 镜像（首次 5-10 分钟）..."
-    docker compose -f docker/docker-compose.yml build
+    export APT_MIRROR
+    docker compose -f docker/docker-compose.yml build --build-arg "APT_MIRROR=${APT_MIRROR}"
     ok "镜像构建完成"
 }
 

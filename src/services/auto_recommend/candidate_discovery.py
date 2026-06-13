@@ -18,6 +18,9 @@ from src.services.auto_recommend.models import (
 
 logger = logging.getLogger(__name__)
 
+# Cache for get_belong_boards results — shared across channels in a single run
+_board_cache: Dict[str, List[Dict]] = {}
+
 # Default screening factors for factor channel
 # Keys must match _SUPPORTED_FACTORS in src/agent/tools/factor_tools.py
 DEFAULT_SCREEN_FACTORS: Dict[str, float] = {
@@ -34,6 +37,20 @@ class DiscoveryChannel(ABC):
 
     def __init__(self, data_manager: Optional[DataFetcherManager] = None):
         self._data_manager = data_manager or DataFetcherManager()
+
+    def _get_boards(self, stock_code: str) -> List[Dict]:
+        """Fetch get_belong_boards with module-level caching."""
+        cached = _board_cache.get(stock_code)
+        if cached is not None:
+            return cached
+        try:
+            boards = self._data_manager.get_belong_boards(stock_code)
+            result = boards or []
+            _board_cache[stock_code] = result
+            return result
+        except Exception:
+            _board_cache[stock_code] = []
+            return []
 
     @property
     @abstractmethod
@@ -76,7 +93,7 @@ class SectorSource(DiscoveryChannel):
         if not sector_scores:
             return candidates
 
-        hot_stocks = self._get_hot_stocks(top_n * 10)
+        hot_stocks = self._get_hot_stocks(top_n * 3)
         for stock in hot_stocks:
             code = stock.get("code", "")
             name = stock.get("name", "")
@@ -104,16 +121,14 @@ class SectorSource(DiscoveryChannel):
         """Resolve the sector/industry for a stock code.
 
         Uses get_belong_boards and returns the first industry board name.
+        Board data is cached across channels to avoid redundant API calls.
         """
-        try:
-            boards = self._data_manager.get_belong_boards(stock_code)
-            for b in boards or []:
-                btype = b.get("type") or ""
-                if "行业" in btype or not btype:
-                    return b.get("name")
-            return None
-        except Exception:
-            return None
+        boards = self._get_boards(stock_code)
+        for b in boards or []:
+            btype = b.get("type") or ""
+            if "行业" in btype or not btype:
+                return b.get("name")
+        return None
 
     @staticmethod
     def _to_score(change_pct: float) -> float:
@@ -150,7 +165,7 @@ class ThemeSource(DiscoveryChannel):
         if not concept_scores:
             return candidates
 
-        hot_stocks = self._get_hot_stocks(top_n * 10)
+        hot_stocks = self._get_hot_stocks(top_n * 3)
         for stock in hot_stocks:
             code = stock.get("code", "")
             name = stock.get("name", "")
@@ -177,15 +192,12 @@ class ThemeSource(DiscoveryChannel):
     def _resolve_stock_theme(self, stock_code: str,
                              known_themes: Mapping[str, float]) -> Optional[str]:
         """Check if a stock belongs to any of the known hot themes."""
-        try:
-            boards = self._data_manager.get_belong_boards(stock_code)
-            for b in boards or []:
-                name = b.get("name", "")
-                if name in known_themes:
-                    return name
-            return None
-        except Exception:
-            return None
+        boards = self._get_boards(stock_code)
+        for b in boards or []:
+            name = b.get("name", "")
+            if name in known_themes:
+                return name
+        return None
 
     @staticmethod
     def _to_score(change_pct: float) -> float:

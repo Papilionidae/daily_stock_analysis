@@ -21,7 +21,7 @@ router = APIRouter()
 
 _last_result: Optional["AutoRecommendResponse"] = None
 
-ENGINE_TIMEOUT = 300  # seconds
+ENGINE_TIMEOUT = 600  # seconds
 
 
 class AutoRecommendRequest(BaseModel):
