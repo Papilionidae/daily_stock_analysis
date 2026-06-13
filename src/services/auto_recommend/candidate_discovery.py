@@ -229,6 +229,7 @@ class FactorSource(DiscoveryChannel):
                 factors=self._factors,
                 top_n=top_n,
                 industry_limit=5,
+                max_universe_size=300,
             )
         except Exception as exc:
             logger.warning("FactorSource: get_universe_screen failed: %s", exc)
@@ -272,7 +273,7 @@ class TechnicalSource(DiscoveryChannel):
     always scanning the same subset.
     """
 
-    TECHNICAL_SCAN_LIMIT = 100
+    TECHNICAL_SCAN_LIMIT = 50
 
     @property
     def channel_type(self) -> ChannelType:

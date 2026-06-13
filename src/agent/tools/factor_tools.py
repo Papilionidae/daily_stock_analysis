@@ -22,6 +22,7 @@ import bisect
 import logging
 import math
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -420,10 +421,16 @@ def _handle_get_factor_universe(
     filtered = []
     excluded_by_market = 0
     has_mcap = any("total_mv" in item for item in raw)
+    has_status = any("status" in item for item in raw)
     for item in raw:
         name = item.get("name", "") or ""
         if exclude_st and ("ST" in name or "退" in name):
             continue
+        # 数据源提供 status 字段时，过滤非正常上市状态的股票（如退市、暂停上市）
+        if has_status:
+            status = str(item.get("status") or "")
+            if status not in ("1", ""):
+                continue
         mcap = 0.0
         if has_mcap:
             mcap = item.get("total_mv", 0) or 0
@@ -564,38 +571,62 @@ def _handle_get_factor_scores(
     mcap_map: Dict[str, float] = {}
     turnover_map: Dict[str, Optional[float]] = {}
     roe_map: Dict[str, Optional[float]] = {}
+    _data_lock = Lock()
 
-    for code in universe:
+    def _fetch_stock_data(code: str) -> None:
+        daily: List[Dict] = []
+        pe: Optional[float] = None
+        mcap: float = 0.0
+        turnover: Optional[float] = None
+        roe: Optional[float] = None
+
         try:
             bars, _ = manager.get_daily_data(stock_code=code, days=250)
-            daily_data[code] = bars.to_dict("records") if bars is not None and not bars.empty else []
+            daily = bars.to_dict("records") if bars is not None and not bars.empty else []
         except Exception as e:
-            logger.warning("get_daily_data failed for %s: %s", code, e)
-            daily_data[code] = []
+            logger.info("get_daily_data failed for %s: %s", code, e)
 
         try:
             quote = manager.get_realtime_quote(stock_code=code)
-            pe_map[code] = _safe_realtime_attr(quote, "pe_ratio")
+            pe = _safe_realtime_attr(quote, "pe_ratio")
             mcap_val = _safe_realtime_attr(quote, "total_mv")
             if mcap_val is None:
                 mcap_val = _safe_realtime_attr(quote, "circ_mv")
-            mcap_map[code] = mcap_val or 0.0
-            turnover_map[code] = _safe_realtime_attr(quote, "turnover_rate")
+            mcap = mcap_val or 0.0
+            turnover = _safe_realtime_attr(quote, "turnover_rate")
         except Exception as e:
-            logger.warning("get_realtime_quote failed for %s: %s", code, e)
-            pe_map[code] = None
-            mcap_map[code] = 0.0
-            turnover_map[code] = None
+            logger.info("get_realtime_quote failed for %s: %s", code, e)
 
         try:
             ctx = manager.get_fundamental_context(stock_code=code)
             growth = ctx.get("growth", {}) if isinstance(ctx, dict) else {}
             data_block = growth.get("data", {}) if isinstance(growth, dict) else {}
             roe_val = data_block.get("roe") if isinstance(data_block, dict) else None
-            roe_map[code] = float(roe_val) if roe_val is not None else None
+            roe = float(roe_val) if roe_val is not None else None
         except Exception as e:
-            logger.warning("get_fundamental_context failed for %s: %s", code, e)
-            roe_map[code] = None
+            logger.info("get_fundamental_context failed for %s: %s", code, e)
+
+        with _data_lock:
+            daily_data[code] = daily
+            pe_map[code] = pe
+            mcap_map[code] = mcap
+            turnover_map[code] = turnover
+            roe_map[code] = roe
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(_fetch_stock_data, code): code for code in universe}
+        for future in as_completed(futures):
+            future.result()
+
+    # 筛掉无日线数据的股票（退市/无效代码），避免进入评分浪费后续时间
+    valid = [code for code in universe if daily_data.get(code)]
+    dropped = len(universe) - len(valid)
+    if dropped:
+        logger.info("因子评分: 筛除 %d 只无日线数据的股票（退市/无效代码）", dropped)
+    universe = valid
+
+    if not universe:
+        return {"error": "universe is empty after filtering stocks with no daily data", "stocks": []}
 
     raw_factors: Dict[str, Dict[str, Optional[float]]] = {}
     industries: List[str] = []
@@ -691,7 +722,7 @@ def _handle_get_universe_screen(
     neutral: str = "industry",
     as_of: Optional[str] = None,
     min_industry_size: int = 5,
-    max_universe_size: int = 2000,
+    max_universe_size: int = 500,
 ) -> Dict[str, Any]:
     if not factors:
         return {"error": "factors must be a non-empty dict"}
@@ -706,10 +737,10 @@ def _handle_get_universe_screen(
 
     if len(universe) > max_universe_size:
         logger.warning(
-            "Universe size %d exceeds screen cap %d; pre-filter via get_factor_universe "
-            "(raise min_market_cap) or pass smaller custom universe.",
-            len(universe), max_universe_size,
+            "Universe size %d exceeds screen cap %d; truncating to %d.",
+            len(universe), max_universe_size, max_universe_size,
         )
+        universe = universe[:max_universe_size]
 
     scores_resp = _handle_get_factor_scores(
         universe=universe,
@@ -780,8 +811,8 @@ get_universe_screen_tool = ToolDefinition(
                      description="Minimum industry size for in-industry neutralization",
                      required=False, default=5),
         ToolParameter(name="max_universe_size", type="integer",
-                     description="Hard cap on universe size for the screen call. Default: 2000",
-                     required=False, default=2000),
+                     description="Hard cap on universe size for the screen call. Default: 500",
+                     required=False, default=500),
     ],
     handler=_handle_get_universe_screen,
     category="factor",

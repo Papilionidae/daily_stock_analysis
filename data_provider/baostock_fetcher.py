@@ -73,7 +73,7 @@ class BaostockFetcher(BaseFetcher):
     """
     
     name = "BaostockFetcher"
-    priority = int(os.getenv("BAOSTOCK_PRIORITY", "3"))
+    priority = int(os.getenv("BAOSTOCK_PRIORITY", "2"))
     
     def __init__(self):
         """初始化 BaostockFetcher"""
@@ -367,7 +367,8 @@ class BaostockFetcher(BaseFetcher):
                             self._stock_name_cache[row['code']] = row['name']
                         
                         logger.info(f"Baostock 获取股票列表成功: {len(df)} 条")
-                        return df[['code', 'name']]
+                        # 保留 status 字段（1=上市, 0=暂停上市），供上游过滤退市股
+                        return df[['code', 'name']] if 'status' not in df.columns else df[['code', 'name', 'status']]
                 
         except Exception as e:
             logger.warning(f"Baostock 获取股票列表失败: {e}")

@@ -115,7 +115,7 @@ class PytdxFetcher(BaseFetcher):
     """
     
     name = "PytdxFetcher"
-    priority = int(os.getenv("PYTDX_PRIORITY", "2"))
+    priority = int(os.getenv("PYTDX_PRIORITY", "3"))
     
     # 默认通达信行情服务器列表
     DEFAULT_HOSTS = [
@@ -214,7 +214,7 @@ class PytdxFetcher(BaseFetcher):
                 host, port = self._hosts[host_idx]
                 
                 try:
-                    if api.connect(host, port, time_out=5):
+                    if api.connect(host, port, time_out=2):
                         connected = True
                         self._current_host_idx = host_idx
                         logger.debug(f"Pytdx 连接成功: {host}:{port}")

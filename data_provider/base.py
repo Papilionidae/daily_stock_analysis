@@ -37,6 +37,9 @@ logger = logging.getLogger(__name__)
 # === 标准化列名定义 ===
 STANDARD_COLUMNS = ['date', 'open', 'high', 'low', 'close', 'volume', 'amount', 'pct_chg']
 
+# 日线数据进程级缓存 TTL（秒）。日线一天只变一次，短 TTL 足够避免重复请求。
+_DAILY_DATA_CACHE_TTL = 300
+
 
 def unwrap_exception(exc: Exception) -> Exception:
     """
@@ -605,6 +608,8 @@ class DataFetcherManager:
         self._fundamental_cache: Dict[str, Dict[str, Any]] = {}
         self._fundamental_cache_lock = RLock()
         self._fundamental_timeout_worker_limit = 8
+        self._daily_data_cache: Dict[str, Tuple[float, pd.DataFrame, str]] = {}
+        self._daily_data_cache_lock = RLock()
         self._fundamental_timeout_slots = BoundedSemaphore(self._fundamental_timeout_worker_limit)
 
     def _ensure_concurrency_guards(self) -> None:
@@ -621,6 +626,10 @@ class DataFetcherManager:
             self._stock_name_cache = {}
         if not hasattr(self, "_stock_name_cache_lock") or self._stock_name_cache_lock is None:
             self._stock_name_cache_lock = RLock()
+        if not hasattr(self, "_daily_data_cache") or self._daily_data_cache is None:
+            self._daily_data_cache = {}
+        if not hasattr(self, "_daily_data_cache_lock") or self._daily_data_cache_lock is None:
+            self._daily_data_cache_lock = RLock()
 
     def _get_fetchers_snapshot(self) -> List[BaseFetcher]:
         self._ensure_concurrency_guards()
@@ -1154,6 +1163,20 @@ class DataFetcherManager:
         # Normalize code (strip SH/SZ prefix etc.)
         stock_code = normalize_stock_code(stock_code)
 
+        # 进程级缓存：日线一天只变一次，短 TTL 避免重复网络请求
+        cache_key = f"daily:{stock_code}:{days}:{start_date or ''}:{end_date or ''}"
+        self._ensure_concurrency_guards()
+        with self._daily_data_cache_lock:
+            cached = self._daily_data_cache.get(cache_key)
+            if cached is not None:
+                ts, df, src = cached
+                if time.time() - ts < _DAILY_DATA_CACHE_TTL:
+                    logger.debug(
+                        "[缓存命中] %s daily_data 缓存 hit (age=%.0fs)",
+                        stock_code, time.time() - ts,
+                    )
+                    return df, src
+
         fetchers = self._get_fetchers_snapshot()
         errors = []
         request_start = time.time()
@@ -1229,6 +1252,10 @@ class DataFetcherManager:
                                 f"[数据源完成] {stock_code} 使用 [{fetcher.name}] 获取成功: "
                                 f"rows={len(df)}, elapsed={elapsed:.2f}s"
                             )
+                            with self._daily_data_cache_lock:
+                                self._daily_data_cache[cache_key] = (
+                                    time.time(), df.copy(), fetcher.name,
+                                )
                             return df, fetcher.name
                         duration_ms = int((time.time() - attempt_start) * 1000)
                         record_provider_run(
@@ -1297,6 +1324,10 @@ class DataFetcherManager:
                         f"[数据源完成] {stock_code} 使用 [{fetcher.name}] 获取成功: "
                         f"rows={len(df)}, elapsed={elapsed:.2f}s"
                     )
+                    with self._daily_data_cache_lock:
+                        self._daily_data_cache[cache_key] = (
+                            time.time(), df.copy(), fetcher.name,
+                        )
                     return df, fetcher.name
                 duration_ms = int((time.time() - attempt_start) * 1000)
                 record_provider_run(
