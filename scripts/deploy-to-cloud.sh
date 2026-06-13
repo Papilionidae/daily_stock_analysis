@@ -150,7 +150,20 @@ clone_or_pull_repo() {
         log "检测到已有代码目录，更新代码..."
         cd "${INSTALL_DIR}"
         git fetch --all
-        git reset --hard "origin/${REPO_BRANCH}"
+
+        # 优先使用 origin/${REPO_BRANCH}，不存在则回退到当前分支的跟踪远程
+        local reset_target="origin/${REPO_BRANCH}"
+        if ! git rev-parse "${reset_target}" >/dev/null 2>&1; then
+            local current_branch
+            current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+            reset_target="origin/${current_branch}"
+            if [ -z "${current_branch}" ] || ! git rev-parse "${reset_target}" >/dev/null 2>&1; then
+                err "无法确定远程分支。请设置 REPO_BRANCH 或手动更新。"
+                exit 1
+            fi
+            warn "origin/${REPO_BRANCH} 不存在，使用当前分支 ${reset_target}"
+        fi
+        git reset --hard "${reset_target}"
 
         # 先 dry-run 列出将被清理的未跟踪文件，给用户一个机会看清楚
         if [ "${GIT_CLEAN_CONFIRM}" = "1" ]; then
