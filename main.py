@@ -1325,7 +1325,7 @@ def main() -> int:
                 background_tasks.append({
                     "task": recommend_task,
                     "interval_seconds": 86400,  # daily
-                    "run_immediately": True,
+                    "run_immediately": should_run_immediately,
                     "name": "auto_recommend",
                 })
             if getattr(config, 'agent_event_monitor_enabled', False):
